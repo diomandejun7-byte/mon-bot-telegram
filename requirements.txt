@@ -1,0 +1,9 @@
+python-telegram-bot==20.5
+pandas
+numpy
+scikit-learn
+xgboost
+lightgbm
+prophet
+pycaret
+joblib
