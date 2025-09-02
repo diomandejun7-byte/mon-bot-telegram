@@ -4,6 +4,4 @@ numpy
 scikit-learn
 xgboost
 lightgbm
-prophet
-pycaret
 joblib
