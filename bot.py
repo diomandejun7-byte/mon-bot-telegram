@@ -11,145 +11,119 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 import xgboost as xgb
 import lightgbm as lgb
-from prophet import Prophet
-from pycaret.classification import setup, compare_models, predict_model
 import joblib
 import os
 
-======================
-
-CONFIG
-
-======================
+# ======================
+# CONFIG
+# ======================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")  # on récupère la variable d'environnement
 
 if not BOT_TOKEN:
-raise ValueError("❌ Erreur : la variable d'environnement BOT_TOKEN n'est pas définie !")
+    raise ValueError("❌ Erreur : la variable d'environnement BOT_TOKEN n'est pas définie !")
 
 logging.basicConfig(level=logging.INFO)
 
-======================
-
-Historique
-
-======================
+# ======================
+# Historique
+# ======================
 
 DATA_FILE = "historique.csv"
 if os.path.exists(DATA_FILE):
-historique = pd.read_csv(DATA_FILE)
+    historique = pd.read_csv(DATA_FILE)
 else:
-colonnes_scores = [f"score{i}" for i in range(1,16)] + [f"cote_score{i}" for i in range(1,16)]
-colonnes_double_chance = ["double1X","cote1X","double12","cote12","doubleX2","coteX2"]
-colonnes_extra = ["diff_coteA_B","ratio_double1X_X2"]
-historique = pd.DataFrame(columns=["equipeA","equipeB","coteA","coteN","coteB"] +
-colonnes_double_chance + colonnes_scores + colonnes_extra +
-["prediction_p1","prediction_finale","resultat","score_reel"])
+    colonnes_scores = [f"score{i}" for i in range(1,16)] + [f"cote_score{i}" for i in range(1,16)]
+    colonnes_double_chance = ["double1X","cote1X","double12","cote12","doubleX2","coteX2"]
+    colonnes_extra = ["diff_coteA_B","ratio_double1X_X2"]
+    historique = pd.DataFrame(columns=["equipeA","equipeB","coteA","coteN","coteB"] +
+        colonnes_double_chance + colonnes_scores + colonnes_extra +
+        ["prediction_p1","prediction_finale","resultat","score_reel"])
 
-======================
-
-Modèles IA
-
-======================
+# ======================
+# Modèles IA
+# ======================
 
 models = {
-"RandomForest": RandomForestClassifier(n_estimators=50),
-"LogisticRegression": LogisticRegression(max_iter=200),
-"NaiveBayes": GaussianNB(),
-"KNN": KNeighborsClassifier(n_neighbors=3),
-"XGBoost": xgb.XGBClassifier(use_label_encoder=False, eval_metric='mlogloss'),
-"LightGBM": lgb.LGBMClassifier()
+    "RandomForest": RandomForestClassifier(n_estimators=50),
+    "LogisticRegression": LogisticRegression(max_iter=200),
+    "NaiveBayes": GaussianNB(),
+    "KNN": KNeighborsClassifier(n_neighbors=3),
+    "XGBoost": xgb.XGBClassifier(use_label_encoder=False, eval_metric='mlogloss'),
+    "LightGBM": lgb.LGBMClassifier()
 }
 
 scalers = {
-"LogisticRegression": StandardScaler(),
-"KNN": StandardScaler(),
-"XGBoost": StandardScaler(),
-"LightGBM": StandardScaler()
+    "LogisticRegression": StandardScaler(),
+    "KNN": StandardScaler(),
+    "XGBoost": StandardScaler(),
+    "LightGBM": StandardScaler()
 }
 
 model_weights = {name:1.0 for name in models.keys()}
 
-======================
-
-Fonctions IA
-
-======================
+# ======================
+# Fonctions IA
+# ======================
 
 def generer_features(cotes, cotes_scores, cotes_double):
-diff_cote = cotes[0] - cotes[2]  # coteA - coteB
-ratio_double = cotes_double[0] / (cotes_double[2]+0.01)
-return cotes + cotes_double + cotes_scores + [diff_cote, ratio_double]
+    diff_cote = cotes[0] - cotes[2]  # coteA - coteB
+    ratio_double = cotes_double[0] / (cotes_double[2]+0.01)
+    return cotes + cotes_double + cotes_scores + [diff_cote, ratio_double]
 
 def entrainer_models():
-global model_weights
-if len(historique) < 5:
-logging.info("Pas assez de données pour entraîner les modèles.")
-return
-feature_cols = ["coteA","coteN","coteB","double1X","double12","doubleX2"] + \
-[f"cote_score{i}" for i in range(1,16)] + ["diff_coteA_B","ratio_double1X_X2"]
-X = historique[feature_cols]
-y = historique["resultat"]
+    global model_weights
+    if len(historique) < 5:
+        logging.info("Pas assez de données pour entraîner les modèles.")
+        return
+    feature_cols = ["coteA","coteN","coteB","double1X","double12","doubleX2"] + \
+        [f"cote_score{i}" for i in range(1,16)] + ["diff_coteA_B","ratio_double1X_X2"]
+    X = historique[feature_cols]
+    y = historique["resultat"]
 
-for name, model in models.items():
-try:
-X_train = X.copy()
-if name in scalers:
-X_train = scalers[name].fit_transform(X_train)
-model.fit(X_train, y)
-logging.info(f"{name} entraîné avec succès.")
-except Exception as e:
-logging.warning(f"Erreur entraînement {name}: {e}")
-continue
+    for name, model in models.items():
+        try:
+            X_train = X.copy()
+            if name in scalers:
+                X_train = scalers[name].fit_transform(X_train)
+            model.fit(X_train, y)
+            logging.info(f"{name} entraîné avec succès.")
+        except Exception as e:
+            logging.warning(f"Erreur entraînement {name}: {e}")
+            continue
 
-Calcul poids dynamiques
-
-for name, model in models.items():
-try:
-X_eval = X.copy()
-if name in scalers:
-X_eval = scalers[name].transform(X_eval)
-acc = model.score(X_eval, y)
-model_weights[name] = max(0.1, acc)
-except Exception as e:
-logging.warning(f"Erreur calcul poids {name}: {e}")
-model_weights[name] = 0.1
+    # Calcul poids dynamiques
+    for name, model in models.items():
+        try:
+            X_eval = X.copy()
+            if name in scalers:
+                X_eval = scalers[name].transform(X_eval)
+            acc = model.score(X_eval, y)
+            model_weights[name] = max(0.1, acc)
+        except Exception as e:
+            logging.warning(f"Erreur calcul poids {name}: {e}")
+            model_weights[name] = 0.1
 
 def prediction_ensemble(features):
-if len(historique)<5:
-return "gagnant", 60
-X_input = pd.DataFrame([features])
-votes = {"gagnant":0,"perdant":0}
-total_weight = 0
-for name, model in models.items():
-try:
-X_in = X_input.copy()
-if name in scalers:
-X_in = scalers[name].transform(X_in)
-pred = model.predict(X_in)[0]
-votes[pred] += model_weights[name]
-total_weight += model_weights[name]
-except Exception as e:
-logging.warning(f"Erreur prediction {name}: {e}")
-continue
-classe = max(votes,key=votes.get)
-pourcentage = (votes[classe]/total_weight)*100 if total_weight>0 else 60
-return classe, round(pourcentage,1)
-
-def choix_score_pondere(scores, cotes_scores, classe):
-probs = np.array([1/c for c in cotes_scores])
-probs /= probs.sum()
-if classe=="gagnant":
-probs[:3] *= 1.3
-probs /= probs.sum()
-return np.random.choice(scores, p=probs)
-
-def scores_plus_probables(scores, cotes_scores, top_n=2):
-probs = np.array([1/c for c in cotes_scores])
-probs /= probs.sum()
-indices = np.argsort(probs)[::-1][:top_n]
-result = [(scores[i], round(probs[i]*100,1)) for i in indices]
-return result
+    if len(historique)<5:
+        return "gagnant", 60
+    X_input = pd.DataFrame([features])
+    votes = {"gagnant":0,"perdant":0}
+    total_weight = 0
+    for name, model in models.items():
+        try:
+            X_in = X_input.copy()
+            if name in scalers:
+                X_in = scalers[name].transform(X_in)
+            pred = model.predict(X_in)[0]
+            votes[pred] += model_weights[name]
+            total_weight += model_weights[name]
+        except Exception as e:
+            logging.warning(f"Erreur prediction {name}: {e}")
+            continue
+    classe = max(votes,key=votes.get)
+    pourcentage = (votes[classe]/total_weight)*100 if total_weight>0 else 60
+    return classe, round(pourcentage,1)
 
 # ======================
 # États conversation
